@@ -37,6 +37,7 @@ def get_EA(meta_path,Ta,RH,Rn,WS,DT, NIR_name=None, RED_name=None,outdir=None):
     nir_data = gdal.Open(band5_path).ReadAsArray().astype(np.float)
     green_data=gdal.Open(band3_path).ReadAsArray().astype(np.float)
 
+    
     if outdir is not None:
         outdir = os.path.abspath(outdir)
         outname = create_outname(outdir, meta_path, "EA", "tif")
@@ -53,44 +54,42 @@ def get_EA(meta_path,Ta,RH,Rn,WS,DT, NIR_name=None, RED_name=None,outdir=None):
 
     ndwi=np.where(green_data+nir_data==0,0,(green_data-nir_data)/(nir_data + red_data))
     # NDVI,LEcor,Ta,RH,Rn,WS,DT,Rs
+    pool=multiprocessing.Pool(multiprocessing.cpu_count())
 
     xBlockSize = 128
     yBlockSize = 128
-    muti_caculate(128,128,ndvi,ndwi,Ta,RH,Rn,WS,DT,outBand)
+    row_col=[]
+    result=[]
+    for i in range(0, y_size, yBlockSize):
+        if i + yBlockSize < y_size:
+            numRows = yBlockSize
+        else:
+            numRows = y_size - i
+        for j in range(0, x_size, xBlockSize):
+            if j + xBlockSize < x_size:
+                numCols = xBlockSize
+            else:
+                numCols = x_size - j
+            ndvi_data = ndvi[i:i + numRows, j:j + numCols]
+            ndwi_data = ndwi[i:i + numRows, j:j + numCols]
+            Ta1=Ta[i:i + numRows, j:j + numCols]
+            RH1=RH[i:i + numRows, j:j + numCols]
+            Rn1=Rn[i:i + numRows, j:j + numCols]
+            WS1=WS[i:i + numRows, j:j + numCols]
+            DT1=DT[i:i + numRows, j:j + numCols]
+            result_temp=pool.apply_async(EA,(ndvi_data,ndwi_data,Ta1,RH1,Rn1,WS1,DT1,))
+            result.append(result_temp)
+            row_col.append((j,i))
+    for i,res in enumerate(result):
+        
+        outBand.WriteArray(res.get(), row_col[i][0], row_col[i][1])
+    row_col.clear()
+    result.clear()
+    pool.close()
+    pool.join()
     outBand.SetNoDataValue(0)
     outBand.FlushCache
     outimg = None
 
     print("Saved output at {0}".format(outname))
 
-def gen_tub(x_bloc,y_bloc,arr):
-    tub=[]
-    for i in range(0,arr.shape[0],y_bloc):
-        if i+y_bloc<arr.shape[0]:
-            num_row=y_bloc
-        else:
-            num_row=arr.shape[0]-i
-        for j in range(0,arr.shape[1],x_bloc):
-            if j+x_bloc<arr.shape[1]:
-                num_col=x_bloc
-            else:
-                numcol=arr.shape[1]-j
-            tub.append((arr[i:i+num_row,j:j+num_col],j,i))   
-    return tub
-def muti_caculate(x_block,y_block,ndvi,ndwi,ta,rh,rn,ws,dt,outBand):
-    result=[]
-    row_col=[]
-    ndvi_list=gen_tub(x_block,y_block,ndvi)
-    ndwi_list=gen_tub(x_block,y_block,ndwi)
-    ta_list=gen_tub(x_block,y_block,ta)
-    rh_list=gen_tub(x_block,y_block,rh)
-    rn_list=gen_tub(x_block,y_block,rn)
-    ws_list=gen_tub(x_block,y_block,ws)
-    dt_list=gen_tub(x_block,y_block,dt)
-    pool=multiprocessing.Pool(multiprocessing.cpu_count())
-    for i in range(len(ndvi_list)):
-        temp_result=pool.apply_async(EA,(ndvi_list[i][0],ndwi_list[i][0],ta_list[i][0],rh_list[i][0],rn_list[i][0],ws_list[i][0],dt_list[i][0],))
-        result.append(temp_result)
-        row_col.append((ndvi_list[i][1],ndvi_list[i][2]))
-    for j,data in enumerate(result):
-        outBand.WriteArray(data.get(),row_col[j][0],row_col[j][1])
