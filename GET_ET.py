@@ -54,12 +54,10 @@ def get_EA(meta_path,Ta,RH,Rn,WS,DT, NIR_name=None, RED_name=None,outdir=None):
 
     ndwi=np.where(green_data+nir_data==0,0,(green_data-nir_data)/(nir_data + red_data))
     # NDVI,LEcor,Ta,RH,Rn,WS,DT,Rs
-    pool=multiprocessing.Pool(multiprocessing.cpu_count())
 
-    xBlockSize = 128
-    yBlockSize = 128
-    row_col=[]
-    result=[]
+    xBlockSize = 2000
+    yBlockSize = 2000
+
     for i in range(0, y_size, yBlockSize):
         if i + yBlockSize < y_size:
             numRows = yBlockSize
@@ -77,19 +75,15 @@ def get_EA(meta_path,Ta,RH,Rn,WS,DT, NIR_name=None, RED_name=None,outdir=None):
             Rn1=Rn[i:i + numRows, j:j + numCols]
             WS1=WS[i:i + numRows, j:j + numCols]
             DT1=DT[i:i + numRows, j:j + numCols]
-            result_temp=pool.apply_async(EA,(ndvi_data,ndwi_data,Ta1,RH1,Rn1,WS1,DT1,))
-            result.append(result_temp)
-            row_col.append((j,i))
-    for i,res in enumerate(result):
-        
-        outBand.WriteArray(res.get(), row_col[i][0], row_col[i][1])
-    row_col.clear()
-    result.clear()
-    pool.close()
-    pool.join()
+            e=cp.asnumpy(EA(NDVI=ndvi_data, NDWI=ndwi_data,Ta=Ta1, RH=RH1, Rn=Rn1, WS=WS1, DT=DT1 ))
+            outBand.WriteArray(e, j, i)
+
+
     outBand.SetNoDataValue(0)
     outBand.FlushCache
     outimg = None
 
     print("Saved output at {0}".format(outname))
+
+
 
